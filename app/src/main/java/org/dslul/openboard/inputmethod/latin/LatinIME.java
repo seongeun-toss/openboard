@@ -157,6 +157,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     private final SubtypeState mSubtypeState = new SubtypeState();
     private EmojiAltPhysicalKeyDetector mEmojiAltPhysicalKeyDetector;
     private StatsUtilsManager mStatsUtilsManager;
+    private int mLastDisplayId = -1;
     // Working variable for {@link #startShowingInputView()} and
     // {@link #onEvaluateInputViewShown()}.
     private boolean mIsExecutingStartShowingInputView;
@@ -594,6 +595,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mStatsUtilsManager.onCreate(this /* context */, mDictionaryFacilitator);
         super.onCreate();
 
+        mLastDisplayId = getCurrentDisplayId();
         mHandler.onCreate();
 
         // TODO: Resolve mutual dependencies of {@link #loadSettings()} and
@@ -778,6 +780,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         // KeyboardSwitcher will check by itself if theme update is necessary
         mKeyboardSwitcher.updateKeyboardTheme();
         super.onConfigurationChanged(conf);
+        checkAndHandleDisplayChange();
     }
 
     @Override
@@ -858,6 +861,8 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @SuppressWarnings("deprecation")
     void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
+        checkAndHandleDisplayChange();
+
         super.onStartInputView(editorInfo, restarting);
 
         mDictionaryFacilitator.onStartInput();
@@ -1138,6 +1143,32 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             mOptionsDialog = null;
         }
         super.hideWindow();
+    }
+
+
+    private void checkAndHandleDisplayChange() {
+        final int currentDisplayId = getCurrentDisplayId();
+        final KeyboardSwitcher switcher = mKeyboardSwitcher;
+
+        // 디스플레이 변경 또는 KeyboardSwitcher와 불일치 감지
+        boolean needsRecreate = (mLastDisplayId != currentDisplayId) ||
+                (switcher != null && switcher.getCurrentDisplayId() != currentDisplayId);
+
+        if (needsRecreate && switcher != null) {
+            switcher.clearCachedViews();
+            final View newInputView = switcher.onCreateInputView(mIsHardwareAcceleratedDrawingEnabled);
+            if (newInputView != null) {
+                setInputView(newInputView);
+                if (isInputViewShown()) {
+                    final MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
+                    if (mainKeyboardView != null) {
+                        mainKeyboardView.invalidate();
+                        mainKeyboardView.requestLayout();
+                    }
+                }
+            }
+            mLastDisplayId = currentDisplayId;
+        }
     }
 
     @Override
@@ -1965,5 +1996,17 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             getWindow().getWindow().setNavigationBarColor(
                     visible ? Color.BLACK : Color.TRANSPARENT);
         }
+    }
+
+    private int getCurrentDisplayId() {
+        try {
+            if (getWindow() != null && getWindow().getWindow() != null) {
+                final android.view.Display display = getWindow().getWindow().getDecorView().getDisplay();
+                return display != null ? display.getDisplayId() : 0;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to get current display ID", e);
+        }
+        return 0;
     }
 }

@@ -19,10 +19,14 @@ package org.dslul.openboard.inputmethod.keyboard;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.os.Build;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.ContextThemeWrapper;
+import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 
 import org.dslul.openboard.inputmethod.event.Event;
@@ -67,6 +71,10 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     private Context mThemeContext;
     private int mCurrentUiMode;
 
+    private final SparseArray<InputView> mInputViewCache = new SparseArray<>();
+    private final SparseArray<Context> mThemeContextCache = new SparseArray<>();
+    private int mCurrentDisplayId = -1;
+
     private static final KeyboardSwitcher sInstance = new KeyboardSwitcher();
 
     public static KeyboardSwitcher getInstance() {
@@ -89,20 +97,45 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     }
 
     public void updateKeyboardTheme() {
+        final Display currentDisplay = getCurrentDisplay();
+        final int displayId = currentDisplay != null ? currentDisplay.getDisplayId() : 0;
+
+        Context contextForTheme = mLatinIME;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && currentDisplay != null) {
+            try {
+                contextForTheme = mLatinIME.createWindowContext(
+                        WindowManager.LayoutParams.TYPE_INPUT_METHOD, null);
+            } catch (Exception e) {
+                // fallback to service context
+            }
+        }
+
         final boolean themeUpdated = updateKeyboardThemeAndContextThemeWrapper(
-                mLatinIME, KeyboardTheme.getKeyboardTheme(mLatinIME /* context */));
-        if (themeUpdated && mKeyboardView != null) {
-            mLatinIME.setInputView(onCreateInputView(mIsHardwareAcceleratedDrawingEnabled));
+                contextForTheme, KeyboardTheme.getKeyboardTheme(contextForTheme));
+
+        if (themeUpdated) {
+            mInputViewCache.remove(displayId);
+            mThemeContextCache.remove(displayId);
+
+            if (mKeyboardView != null) {
+                mLatinIME.setInputView(onCreateInputView(mIsHardwareAcceleratedDrawingEnabled));
+            }
         }
     }
 
     private boolean updateKeyboardThemeAndContextThemeWrapper(final Context context,
-            final KeyboardTheme keyboardTheme) {
+                                                              final KeyboardTheme keyboardTheme) {
         final boolean nightModeChanged = (mCurrentUiMode & Configuration.UI_MODE_NIGHT_MASK)
                 != (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK);
         if (mThemeContext == null || !keyboardTheme.equals(mKeyboardTheme) || nightModeChanged) {
             mKeyboardTheme = keyboardTheme;
             mThemeContext = new ContextThemeWrapper(context, keyboardTheme.mStyleId);
+
+            // DisplayMetrics 수동 복사로 올바른 디스플레이 정보 동기화
+            final android.util.DisplayMetrics baseMetrics = context.getResources().getDisplayMetrics();
+            final android.util.DisplayMetrics themeMetrics = mThemeContext.getResources().getDisplayMetrics();
+            themeMetrics.setTo(baseMetrics);
+
             mCurrentUiMode = context.getResources().getConfiguration().uiMode;
             KeyboardLayoutSet.onKeyboardThemeChanged();
             return true;
@@ -111,7 +144,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     }
 
     public void loadKeyboard(final EditorInfo editorInfo, final SettingsValues settingsValues,
-            final int currentAutoCapsState, final int currentRecapitalizeState) {
+                             final int currentAutoCapsState, final int currentRecapitalizeState) {
         final KeyboardLayoutSet.Builder builder = new KeyboardLayoutSet.Builder(
                 mThemeContext, editorInfo);
         final Resources res = mThemeContext.getResources();
@@ -188,22 +221,22 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     // TODO: Remove this method. Come up with a more comprehensive way to reset the keyboard layout
     // when a keyboard layout set doesn't get reloaded in LatinIME.onStartInputViewInternal().
     public void resetKeyboardStateToAlphabet(final int currentAutoCapsState,
-            final int currentRecapitalizeState) {
+                                             final int currentRecapitalizeState) {
         mState.onResetKeyboardStateToAlphabet(currentAutoCapsState, currentRecapitalizeState);
     }
 
     public void onPressKey(final int code, final boolean isSinglePointer,
-            final int currentAutoCapsState, final int currentRecapitalizeState) {
+                           final int currentAutoCapsState, final int currentRecapitalizeState) {
         mState.onPressKey(code, isSinglePointer, currentAutoCapsState, currentRecapitalizeState);
     }
 
     public void onReleaseKey(final int code, final boolean withSliding,
-            final int currentAutoCapsState, final int currentRecapitalizeState) {
+                             final int currentAutoCapsState, final int currentRecapitalizeState) {
         mState.onReleaseKey(code, withSliding, currentAutoCapsState, currentRecapitalizeState);
     }
 
     public void onFinishSlidingInput(final int currentAutoCapsState,
-            final int currentRecapitalizeState) {
+                                     final int currentRecapitalizeState) {
         mState.onFinishSlidingInput(currentAutoCapsState, currentRecapitalizeState);
     }
 
@@ -408,7 +441,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
      * Updates state machine to figure out when to automatically switch back to the previous mode.
      */
     public void onEvent(final Event event, final int currentAutoCapsState,
-            final int currentRecapitalizeState) {
+                        final int currentRecapitalizeState) {
         mState.onEvent(event, currentAutoCapsState, currentRecapitalizeState);
     }
 
@@ -455,6 +488,20 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         if (mEmojiPalettesView != null) {
             mEmojiPalettesView.stopEmojiPalettes();
         }
+
+        mInputViewCache.clear();
+        mThemeContextCache.clear();
+        mCurrentDisplayId = -1;
+    }
+
+    public void clearCachedViews() {
+        mInputViewCache.clear();
+        mThemeContextCache.clear();
+        mCurrentDisplayId = -1;
+    }
+
+    public int getCurrentDisplayId() {
+        return mCurrentDisplayId;
     }
 
     public View onCreateInputView(final boolean isHardwareAcceleratedDrawingEnabled) {
@@ -462,13 +509,38 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
             mKeyboardView.closing();
         }
 
-        updateKeyboardThemeAndContextThemeWrapper(
-                mLatinIME, KeyboardTheme.getKeyboardTheme(mLatinIME /* context */));
-        mCurrentInputView = (InputView)LayoutInflater.from(mThemeContext).inflate(
-                R.layout.input_view, null);
+        final Display currentDisplay = getCurrentDisplay();
+        final int displayId = currentDisplay != null ? currentDisplay.getDisplayId() : 0;
+
+        // 실제 디스플레이와 캐시된 디스플레이가 다르면 캐시 클리어
+        if (mCurrentDisplayId != displayId) {
+            mInputViewCache.clear();
+            mThemeContextCache.clear();
+        }
+
+        // WindowContext 생성 (API 30+에서 올바른 디스플레이 정보 사용)
+        Context windowContext;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && currentDisplay != null) {
+            try {
+                windowContext = mLatinIME.createWindowContext(
+                        WindowManager.LayoutParams.TYPE_INPUT_METHOD, null);
+            } catch (Exception e) {
+                windowContext = mLatinIME;
+            }
+        } else {
+            windowContext = mLatinIME;
+        }
+
+        // 강제로 ThemeContext 재생성하여 올바른 DisplayMetrics 사용
+        final KeyboardTheme keyboardTheme = KeyboardTheme.getKeyboardTheme(windowContext);
+        mThemeContext = null; // 강제 재생성
+        updateKeyboardThemeAndContextThemeWrapper(windowContext, keyboardTheme);
+
+        mCurrentInputView = (InputView) LayoutInflater.from(mThemeContext)
+                .inflate(R.layout.input_view, null);
+
         mMainKeyboardFrame = mCurrentInputView.findViewById(R.id.main_keyboard_frame);
-        mEmojiPalettesView = mCurrentInputView.findViewById(
-                R.id.emoji_palettes_view);
+        mEmojiPalettesView = mCurrentInputView.findViewById(R.id.emoji_palettes_view);
 
         mKeyboardView = mCurrentInputView.findViewById(R.id.keyboard_view);
         mKeyboardView.setHardwareAcceleratedDrawingEnabled(isHardwareAcceleratedDrawingEnabled);
@@ -476,7 +548,17 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         mEmojiPalettesView.setHardwareAcceleratedDrawingEnabled(
                 isHardwareAcceleratedDrawingEnabled);
         mEmojiPalettesView.setKeyboardActionListener(mLatinIME);
+
+        mCurrentDisplayId = displayId;
         return mCurrentInputView;
+    }
+
+    private Display getCurrentDisplay() {
+        if (mLatinIME != null && mLatinIME.getWindow() != null &&
+                mLatinIME.getWindow().getWindow() != null) {
+            return mLatinIME.getWindow().getWindow().getDecorView().getDisplay();
+        }
+        return null;
     }
 
     public int getKeyboardShiftMode() {
@@ -485,15 +567,15 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
             return WordComposer.CAPS_MODE_OFF;
         }
         switch (keyboard.mId.mElementId) {
-        case KeyboardId.ELEMENT_ALPHABET_SHIFT_LOCKED:
-        case KeyboardId.ELEMENT_ALPHABET_SHIFT_LOCK_SHIFTED:
-            return WordComposer.CAPS_MODE_MANUAL_SHIFT_LOCKED;
-        case KeyboardId.ELEMENT_ALPHABET_MANUAL_SHIFTED:
-            return WordComposer.CAPS_MODE_MANUAL_SHIFTED;
-        case KeyboardId.ELEMENT_ALPHABET_AUTOMATIC_SHIFTED:
-            return WordComposer.CAPS_MODE_AUTO_SHIFTED;
-        default:
-            return WordComposer.CAPS_MODE_OFF;
+            case KeyboardId.ELEMENT_ALPHABET_SHIFT_LOCKED:
+            case KeyboardId.ELEMENT_ALPHABET_SHIFT_LOCK_SHIFTED:
+                return WordComposer.CAPS_MODE_MANUAL_SHIFT_LOCKED;
+            case KeyboardId.ELEMENT_ALPHABET_MANUAL_SHIFTED:
+                return WordComposer.CAPS_MODE_MANUAL_SHIFTED;
+            case KeyboardId.ELEMENT_ALPHABET_AUTOMATIC_SHIFTED:
+                return WordComposer.CAPS_MODE_AUTO_SHIFTED;
+            default:
+                return WordComposer.CAPS_MODE_OFF;
         }
     }
 
