@@ -756,6 +756,9 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onConfigurationChanged(final Configuration conf) {
+        final int currentDisplayId = getCurrentDisplayId();
+        final boolean displayChanged = (mLastDisplayId != -1 && mLastDisplayId != currentDisplayId);
+
         SettingsValues settingsValues = mSettings.getCurrent();
         if (settingsValues.mDisplayOrientation != conf.orientation) {
             mHandler.startOrientationChanging();
@@ -781,6 +784,10 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mKeyboardSwitcher.updateKeyboardTheme();
         super.onConfigurationChanged(conf);
         checkAndHandleDisplayChange();
+
+        if (displayChanged) {
+            requestShowSelf(0);
+        }
     }
 
     @Override
@@ -808,7 +815,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onStartInput(final EditorInfo editorInfo, final boolean restarting) {
+        final int currentDisplayId = getCurrentDisplayId();
+        final boolean displayChanged = (mLastDisplayId != -1 && mLastDisplayId != currentDisplayId);
+
         mHandler.onStartInput(editorInfo, restarting);
+
+        if (displayChanged) {
+            requestShowSelf(0);
+        }
     }
 
     @Override
@@ -861,11 +875,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @SuppressWarnings("deprecation")
     void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
-        checkAndHandleDisplayChange();
-
         super.onStartInputView(editorInfo, restarting);
 
         mDictionaryFacilitator.onStartInput();
+
+        checkAndHandleDisplayChange();
         // Switch to the null consumer to handle cases leading to early exit below, for which we
         // also wouldn't be consuming gesture data.
         mGestureConsumer = GestureConsumer.NULL_GESTURE_CONSUMER;
@@ -1150,21 +1164,20 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         final int currentDisplayId = getCurrentDisplayId();
         final KeyboardSwitcher switcher = mKeyboardSwitcher;
 
-        // 디스플레이 변경 또는 KeyboardSwitcher와 불일치 감지
-        boolean needsRecreate = (mLastDisplayId != currentDisplayId) ||
-                (switcher != null && switcher.getCurrentDisplayId() != currentDisplayId);
+        int switcherDisplayId = switcher != null ? switcher.getCurrentDisplayId() : -1;
+        boolean needsRecreate = (mLastDisplayId != -1 && mLastDisplayId != currentDisplayId) ||
+                (switcherDisplayId != -1 && switcherDisplayId != currentDisplayId);
 
         if (needsRecreate && switcher != null) {
             switcher.clearCachedViews();
             final View newInputView = switcher.onCreateInputView(mIsHardwareAcceleratedDrawingEnabled);
             if (newInputView != null) {
                 setInputView(newInputView);
-                if (isInputViewShown()) {
-                    final MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
-                    if (mainKeyboardView != null) {
-                        mainKeyboardView.invalidate();
-                        mainKeyboardView.requestLayout();
-                    }
+
+                final MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
+                if (mainKeyboardView != null) {
+                    mainKeyboardView.invalidate();
+                    mainKeyboardView.requestLayout();
                 }
             }
             mLastDisplayId = currentDisplayId;
