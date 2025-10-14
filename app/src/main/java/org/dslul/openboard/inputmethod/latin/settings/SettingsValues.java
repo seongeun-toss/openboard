@@ -147,7 +147,7 @@ public class SettingsValues {
         mIncludesOtherImesInLanguageSwitchList = !Settings.ENABLE_SHOW_LANGUAGE_SWITCH_KEY_SETTINGS || prefs.getBoolean(Settings.PREF_INCLUDE_OTHER_IMES_IN_LANGUAGE_SWITCH_LIST, false) /* forcibly */;
         mShowsNumberRow = prefs.getBoolean(Settings.PREF_SHOW_NUMBER_ROW, false);
         mShowsHints = prefs.getBoolean(Settings.PREF_SHOW_HINTS, true);
-        mShowsLanguageSwitchKey = prefs.getBoolean(Settings.PREF_SHOW_LANGUAGE_SWITCH_KEY, false);
+        mShowsLanguageSwitchKey = prefs.getBoolean(Settings.PREF_SHOW_LANGUAGE_SWITCH_KEY, true);
         mShowsEmojiKey = prefs.getBoolean(Settings.PREF_SHOW_EMOJI_KEY, false);
         mUsePersonalizedDicts = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true);
         mUseDoubleSpacePeriod = prefs.getBoolean(Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD, true)
@@ -306,7 +306,7 @@ public class SettingsValues {
                     .putBoolean(Settings.PREF_SHOW_SUGGESTIONS, !alwaysHide)
                     .apply();
         }
-        return prefs.getBoolean(Settings.PREF_SHOW_SUGGESTIONS, true);
+        return prefs.getBoolean(Settings.PREF_SHOW_SUGGESTIONS, false);
     }
 
     private static boolean readBigramPredictionEnabled(final SharedPreferences prefs,
@@ -361,7 +361,7 @@ public class SettingsValues {
                     .remove(Settings.PREF_VOICE_MODE_OBSOLETE)
                     .apply();
         }
-        return prefs.getBoolean(Settings.PREF_VOICE_INPUT_KEY, true);
+        return prefs.getBoolean(Settings.PREF_VOICE_INPUT_KEY, false);
     }
 
     public String dump() {
