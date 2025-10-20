@@ -756,9 +756,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onConfigurationChanged(final Configuration conf) {
-        final int currentDisplayId = getCurrentDisplayId();
-        final boolean displayChanged = (mLastDisplayId != -1 && mLastDisplayId != currentDisplayId);
-
         SettingsValues settingsValues = mSettings.getCurrent();
         if (settingsValues.mDisplayOrientation != conf.orientation) {
             mHandler.startOrientationChanging();
@@ -783,11 +780,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         // KeyboardSwitcher will check by itself if theme update is necessary
         mKeyboardSwitcher.updateKeyboardTheme();
         super.onConfigurationChanged(conf);
-        checkAndHandleDisplayChange();
-
-        if (displayChanged) {
-            requestShowSelf(0);
-        }
     }
 
     @Override
@@ -820,7 +812,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
         mHandler.onStartInput(editorInfo, restarting);
 
-        if (displayChanged) {
+        if (displayChanged && isInputViewShown()) {
             requestShowSelf(0);
         }
     }
