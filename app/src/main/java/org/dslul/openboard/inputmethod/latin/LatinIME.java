@@ -1173,6 +1173,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                 }
             }
             mLastDisplayId = currentDisplayId;
+            loadKeyboard();
         }
     }
 
